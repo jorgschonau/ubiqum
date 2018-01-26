@@ -1,0 +1,8 @@
+# "substracts" items of vector b from vector a
+
+excluder <- function(a, b){ 
+         for (i in 1:length(b)) {
+                  a <-  a[lapply(a, function(x) length(grep(paste0(b[i],"."),x,value=FALSE))) == 0]
+                  }
+         return(a)
+}
