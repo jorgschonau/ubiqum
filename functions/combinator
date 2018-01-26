@@ -1,0 +1,14 @@
+combinator <- function(a,b){
+           combination <- c()
+           for (i in 1:length(a)) {
+           for(j in 1:length(b)){
+           combination <- c(combination, c(a[i], b[j])) 
+           }
+      } 
+      df <- as.data.frame(t(matrix(combination, nrow = 2)))
+      list <- c() 
+      for (i in 1:nrow(df)){
+      list <- c(list, paste(df[i,1],df[i,2]))
+    }
+    return(list)
+  }
