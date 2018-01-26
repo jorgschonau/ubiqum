@@ -1,0 +1,16 @@
+# requires stringr library 
+autosearch <- function(a, y = "en", x = 50){ # default value for y (language) = "en", default value for x (number of results) to 50 if not specified in function call
+               a <- str_replace_all(a, " ", "+") # need to replace spaces by "+" for google search string  
+               links_total <-c() 
+  
+  for (i in 1:length(a)) {
+      google_url <- paste0("https://www.google.co.uk/search?q=",a[i],"&lr=lang_",y,"&hl=",y,"&num=",x)
+      oogleraw <- read_html(google_url)
+      links <- googleraw %>% html_nodes(xpath='//h3/a') %>% html_attr('href')
+      links_clean <- gsub('/url\\?q=','',sapply(strsplit(links[as.vector(grep('url',links))],split='&'),'[',1))
+      links_total <- append(links_total,links_clean)
+      Sys.sleep(runif(1, 5, 30))  # random pause (5 - 30 secs) to avoid being blocked by google, fairly generous, would like to avoid any hassle
+      }
+
+  return(unique(links_total))
+}
