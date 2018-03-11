@@ -1,0 +1,236 @@
+rm(list = ls())
+#### Libraries ####
+library(readr)
+library(caret)
+#library(e1071)
+library(dplyr)
+#library(C50)
+library(reshape2)
+library(corrplot)
+library(arules)
+library(rvest)
+library(XML)
+library(bitops)
+library(RCurl)
+library(stringr)
+
+set.seed(123)
+
+# functions
+# combinator function
+combinator <- function(a,b){
+  combination <- c()
+  for (i in 1:length(a)) {
+    for(j in 1:length(b)){
+      combination <- c(combination, c(a[i], b[j])) 
+    }
+  }
+  
+  df <- as.data.frame(t(matrix(combination, nrow = 2)))
+  
+  list <- c() 
+  for (i in 1:nrow(df)){
+    list <- c(list, paste(df[i,1],df[i,2]))
+  }
+  return(list)
+}
+
+# excluder function
+excluder <- function(a, b){ 
+  
+  for (i in 1:length(b)) {
+    a <-  a[lapply(a, function(x) length(grep(paste0(b[i],"."),x,value=FALSE))) == 0]
+  #  a <-  a[lapply(a, function(x) length(grep(paste0(".",b[i],"."),x,value=FALSE))) == 0]
+  }
+  return(a)
+}
+
+# autosearch function
+autosearch <- function(a, y = "en", x = 50){ # default value for y (language) = "en", default value for x (number of results) to 50 if not specified in function call
+  # requires stringr library 
+  a <- str_replace_all(a, " ", "+") # need to replace spaces by "+" for google search string  
+  links_total <-c()                 # empty list 
+  
+  for (i in 1:length(a)) {
+    
+    google_url <- paste0("https://www.google.co.uk/search?q=",a[i],"&lr=lang_",y,"&hl=",y,"&num=",x)
+    
+    googleraw <- read_html(google_url)
+    links <- googleraw %>% html_nodes(xpath='//h3/a') %>% html_attr('href')
+    links_clean <- gsub('/url\\?q=','',sapply(strsplit(links[as.vector(grep('url',links))],split='&'),'[',1))
+    links_total <- append(links_total,links_clean)
+    
+    Sys.sleep(runif(1, 5, 40))  # random pause (2 - 30 secs) to avoid being blocked by google, fairly generous, would like to avoid any trouble
+  }
+   
+  return(unique(links_total))
+}
+
+# reading google string
+
+googleraw <- read_html('https://www.google.co.uk/search?q=iphone+x+samsung+galaxy&hl=en&num=100')
+
+googleraw_xml <- htmlParse(getURL('https://www.google.co.uk/search?q=iphone+x+samsung+galaxy&hl=en&num=100'),asText=TRUE)
+saveXML(googleraw_xml, file = "googleraw.txt")
+
+links <- googleraw %>% html_nodes(xpath='//h3/a') %>% html_attr('href')
+links_clean <- gsub('/url\\?q=','',sapply(strsplit(links[as.vector(grep('url',links))],split='&'),'[',1))
+
+# 
+
+  
+#### queries partial lists
+# Phones
+phones <- c("HUAWEI MATE 10",
+"SAMSUNG GALAXY NOTE 8",
+"APPLE IPHONE X",
+"IPHONE X",
+"GOOGLE PIXEL 2 Xl",
+"GOOGLE PIXEL 2",
+"HTC U11",
+"LG V30", 
+"ONEPLUS 5T",
+"MOTOROLA MOTO Z2",
+"MOTO Z2",
+"SAMSUNG GALAXY 8",
+"GALAXY S8")
+
+modifiers<- c(
+"specs",
+"camera",
+"battery",
+"review",
+"reviews",
+"performance",
+"software",
+"features")
+
+comparison <- c(
+"vs",
+"comparison")
+
+smartphone <- c(
+"premium smartphones",
+"smartphones 2017",
+"smartphones 2018",
+"smartphones", 
+"top 10 smartphones",
+"top 20 smartphones",
+"10 smartphones",
+"20 smartphones",
+"top 10 mobile phones",
+"mobile phones")
+
+best <- c(
+"best",
+"guide",
+"recommendation",
+"overall",
+"right now")
+
+View(queries2)
+
+# sites to exclude
+
+exclude <- c("apple",
+             "htc",
+             "huawei",
+             "motorola",
+             "moto",
+             "store",
+             "samsung",
+             "ebay",
+             "walmart",
+             "carrefour",
+             "mediamarkt",
+             "fnac",
+             "bestbuy",
+             "sprint",
+             "argos",
+             "vodafone",
+             "moviestar",
+             "carphonewarehouse",
+             "verizonwireless",
+             "kogan",
+             "singtelshop",
+             "dbrand",
+             "android",
+             "flipkart",
+             "o2",
+             "sky",
+             "urbanarmorgear",
+             "google",
+             "shop",
+             "currys",
+             "swisscom",
+             "support",
+             "t-mobile",
+             "yourprint",
+             "xtremeskins",
+             "priceprice",
+             "youtube",
+             "zerolemon",
+             "sprint",
+             "smartprix",
+             "sonymobile",
+             "dhondo",
+             "emresanli",
+             "lg",
+             "pinterest",
+             "priceinkenya",
+             "readycart.com",
+             "videoclips24",
+             "videoyoutub",
+             "videoclips24",
+             "videoyoutub",
+             "mysmartprice",
+             "lenovo",
+             "phonegg",
+             "oneplus",
+             "pricebaba",
+             "oneplus",
+             "three",
+             "201tube",
+             "bell")
+
+exclude <- sort(unique(exclude))  
+ 
+# creating query lists
+
+phones_modifiers <- combinator(phones,modifiers)
+smartphone_best <- combinator(smartphone,best)
+phones_comparison <- combinator(phones,comparison)
+phones_comparison <- combinator(phones_comparison, phones)
+
+queries1 <- unique(combine(phones,phones_modifiers,smartphone,smartphone_best))
+queries2 <- unique(phones_comparison)
+
+length(queries1)
+length(queries2)
+
+links_queries1 <- autosearch(queries1)
+links_queries1 <- unique(links_queries1)
+
+links_queries2 <- autosearch(queries2)
+
+links_queries2 <- unique(links_queries2)
+
+links_all <- combine(links_queries1,links_queries2)
+
+links_all <- unique(links_all)
+
+
+links_all <- excluder(links_all,exclude)
+length(links_all)
+
+links_clean <- excluder(links_clean, exclude)
+
+write.csv(sort(links_clean),"links_clean.csv", col.names = F)
+
+# last manipulation, for making sure to include Amazon product pages showing ALLl reviews
+
+links_amazon <- gsub("/dp/","/product-reviews/",links_all[grep("www.amazon.", links_all)])
+links_clean <- combine(links_all,links_amazon)
+
+links_clean <- unique(links_clean)
+length(links_clean)
