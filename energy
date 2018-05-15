@@ -1,0 +1,286 @@
+#rm(list = ls())
+
+#### Libraries ####
+
+library(tidyverse)
+library(caret)
+library(reshape2)
+library(randomForest)
+library(lubridate)
+library(zoo)
+library(ggthemes)
+
+### Dataset info
+# This archive contains 2075259 measurements gathered between December 2006 and November 2010 (47 months). 
+# Notes: 
+# 1. (global_active_power*1000/60 - sub_metering_1 - sub_metering_2 - sub_metering_3) represents the active energy consumed every minute (in watt hour) in the household by electrical equipment not measured in sub-meterings 1, 2 and 3. 
+# 2. The dataset contains some missing values in the measurements (nearly 1,25% of the rows). All calendar timestamps are present in the dataset but for some timestamps, the measurement values are missing: a missing value is represented by the absence of value between two consecutive semi-colon attribute separators. For instance, the dataset shows missing values on April 28, 2007.
+# 
+# Attribute Information:
+#   
+# 1. date: Date in format dd/mm/yyyy 
+# 2. time: time in format hh:mm:ss 
+# 3. global_active_power: household global minute-averaged active power (in kilowatt) 
+# 4. global_reactive_power: household global minute-averaged reactive power (in kilowatt) 
+# 5. voltage: minute-averaged voltage (in volt) 
+# 6. global_intensity: household global minute-averaged current intensity (in ampere) 
+# 7. sub_metering_1: energy sub-metering No. 1 (in watt-hour of active energy). It corresponds to the kitchen, containing mainly a dishwasher, an oven and a microwave (hot plates are not electric but gas powered). 
+# 8. sub_metering_2: energy sub-metering No. 2 (in watt-hour of active energy). It corresponds to the laundry room, containing a washing-machine, a tumble-drier, a refrigerator and a light. 
+# 9. sub_metering_3: energy sub-metering No. 3 (in watt-hour of active energy). It corresponds to an electric water-heater and an air-conditioner.
+# 
+
+####> Loading Dataset
+
+energy <- read.csv("~/Desktop/Ubiqum/Ubiqum mentor/Task 5 Energy/household_power_consumption.txt",sep=";", dec = ".", na.strings ="?", stringsAsFactors=FALSE)
+energy <- cbind(energy,paste(energy$Date,energy$Time), stringsAsFactors=FALSE)
+
+energy <- energy[,c(ncol(energy), 1:(ncol(energy)-1))]
+colnames(energy)[1] <- 'DateTime'
+
+#### DF with NAs ####
+energy_na <- energy
+energy_na$DateTime <- strptime(energy_na$DateTime, "%d/%m/%Y %H:%M:%S")
+energy_na$Date < as.Date.POSIXct(energy_na$Date, tz = "GMT")
+
+energy_onlyNA <- energy_na[is.na(energy_na$Global_active_power),] 
+
+energy_onlyNA$Date <- as.POSIXct(energy_onlyNA$Date, format = "%d/%m/%Y")
+
+energy_onlyNA_daily <- energy_onlyNA %>% select(Date) %>% 
+  group_by (Date) %>% summarise(Count = n())
+
+energy_onlyNA_daily <- energy_onlyNA_daily %>%
+  group_by (Month = lubridate::month(Date), Year = lubridate::year(Date)) 
+
+# NAs in hours per month & year
+energy_NAs_permonth <- as.data.frame(energy_onlyNA_daily %>% group_by (Month,Year) %>%
+  summarise(NAs = round(sum(Count)/60,3)))
+
+View(energy_NAs_permonth)
+
+# plotting NAs in hours per month
+                                                                                                                    
+ggplot(energy_NAs_permonth, aes(as.factor(Month), NAs)) +
+geom_bar(stat="identity") + facet_wrap(~Year) +
+labs(title = "NAs in hours per Month", y = "NAs in hours", x = "Month") +
+  scale_x_continuous(breaks = c(1:12))
+
+# alternative: filter out 2006 (no nas), factor month
+# plus bw theme, no grid
+
+ggplot(energy_NAs_permonth %>% dplyr::filter(Year != 2006), aes(factor(Month), NAs)) +
+  geom_bar(stat="identity") + facet_wrap(~Year) +
+  labs(title = "NAs in hours per Month", y = "NAs in hours", x = "Month") +
+theme(panel.grid.major = element_blank() , panel.grid.minor = element_blank()) +
+  
+# theme_bw()
+# theme_dark()
+# theme_economist()
+#  , scales="free"
+#  theme_tufte()
+#  theme_excel()
+
+  
+# replacing NA's by 0 (will figure out a better way later) 
+
+energy_0NA <- replace(energy,is.na(energy),0)  
+
+energy_0NA[which(is.na(energy_0NA)) > 0,]
+
+energy[which(is.na(energy)),]
+  
+energy_0NA <- energy %>%
+    mutate(myCol1 = if_else(is.na(myCol1), 0, myCol1))  
+
+?mutate_each(if_else(is.na),0)
+
+#### replacing NAs ####
+
+# only 10 or less consecutive NAs.
+
+
+numbers4 <- c(-2, -1, 0, 5, 7, 8)
+
+numbers5 <- c(-2, -1, NA, 5, NA, NA, NA)
+
+result <- rle(diff(numbers5))
+
+
+consNAS <-
+  
+unlist(rle(is.na(energy[, 4])) ) >10
+
+
+
+x = c(NA,1,2,3,NA,NA,NA,NA,5,45,7,NA,NA,NA,NA,1,6,20, NA, NA, 200)
+
+
+x = c(NA,1,2,3,NA,NA,5,6,7,NA,NA,NA)
+zoo::na.locf(x,  maxgap = 2, na.rm = FALSE)
+
+
+x <- c(NA,1,NA,2,3,NA,NA,NA,NA,5,6,7,NA,NA,NA,2,8,NA)
+y <- na.locf(x,  mingap = 2, na.rm = FALSE)
+
+cx <- c(0,cumsum(x))
+rsum <- (cx[(n+1):length(cx)] - cx[1:(length(cx) - n)]) / n
+
+
+View(replace(energy$Global_active_power, cumsum(is.na(energy$Global_active_power)) == 200, 0))
+## [1]  0  1  2  3  0  0  5  6  7 NA NA NA
+
+rollapply(energy$Global_active_power, 15,mean)
+
+energy$Global_active_power
+
+?rollapply
+conflicts()
+my_replace1(x, n(), 4)
+
+require(data.table)
+require(dplyr)
+
+x = c(NA,1,2,3,NA,NA,5,6,7,NA,NA,NA,2,3,8,4)
+
+# function for replacing any NA series of over 200
+
+my_replace <- function(x, n, mingap){
+  if(is.na(x[1]) && n >= mingap){
+    x <- 0
+  }
+  x
+}
+
+View(data.frame(energy$Global_active_power, my_replace(energy$Global_active_power, n(), 200)) )
+
+energy$Global_active_power <- my_replace(energy$Global_active_power, n(), 200)
+
+which(is.na(energy$Global_active_power)==T)
+
+
+data.frame(x, y=x) %>% 
+  group_by(data.table::rleid(x)) %>% 
+  mutate(x = my_replace(x, n(), 3), y = my_replace(y, n(), 2)) %>% 
+  ungroup() %>% 
+  select(x,y)
+
+data.frame(energy$Global_active_power, y=energy$Global_active_power) %>% 
+  group_by(data.table::rleid(energy$Global_active_power)) %>% 
+  mutate(GAP1 = my_replace(energy$Global_active_power, n(), 200), GAP2 = my_replace(y, n(), 3)) %>% 
+  ungroup() %>% 
+  select(x,y)
+
+
+%>% 
+  ungroup() %>% 
+  select(x,y)
+
+?rleid
+
+
+View(energy[,4])
+
+is.na.rle <- rle(is.na(energy[, 4]))
+Since NAs are "bad" only when they come by three or more, we can re-write the values:
+  
+  is.na.rle$values <- is.na.rle$values & is.na.rle$lengths >= 200
+Finally, use inverse.rle to build the vector of indices to filter:
+  
+  data[!inverse.rle(is.na.rle), ]
+
+x
+
+na.locf(x,  mingap = 2, na.rm = FALSE)
+
+
+?diff
+> any(result$lengths>=2 & result$values==1)
+
+is.na.rle$values & is.na.rle$lengths >= 3
+
+rle (is.na(energy_na[, 3]> 4))  
+
+rle(is.na(energy_na[, 4]))
+
+
+is.na.rle$values <- is.na.rle$values & is.na.rle$lengths >= 3
+
+  
+  
+
+?rle
+
+energy_na
+
+# 60% of a day, ie whole day
+1440*0.6
+
+
+energy <- na.omit(energy)
+
+#energy$DateTime <- strptime(energy$DateTime, "%d/%m/%Y %H:%M:%S")
+#energy$Date <- as.Date.POSIXct(energy$Date, tz = "GMT")
+
+colnames(energy)[1] <- 'DateTime'
+colnames(energy)[8] <- "Kitchen"
+colnames(energy)[9] <- "Laundry"
+colnames(energy)[10] <- "AcHeating"
+#### conversion
+
+head(energy)
+energy$Kitchen <- energy$Kitchen/1000
+energy$Laundry <- energy$Laundry/1000
+energy$AcHeating <- energy$AcHeating/1000
+energy$Global_active_power <- energy$Global_active_power/60
+energy$Date <- as.POSIXct(energy$Date)
+energy$DateTime <- as.POSIXct(energy$DateTime)
+#energy$total <- energy %>% mutate (total = Kitchen + Laundry + AcHeating)
+
+View(head(energy))
+
+#### Exploration ####
+
+energy_hourly <- energy %>% group_by(lubridate::year(DateTime)) %>% summarise(Kitchen_all = sum(Kitchen), Laundry_all = sum(Laundry), AcHeating_all = sum (sum(Laundry))) 
+
+energy$Kitchen
+
+energy_hourly <- energy  %>%
+  group_by(year = lubridate::year(DateTime), Day = lubridate::day(DateTime), Hour = lubridate::hour(DateTime), Month = lubridate::month(DateTime)) %>%
+  summarise(Kitchen_all = sum(Kitchen), Laundry_all = sum(Laundry), AcHeating_all = sum (sum(Laundry))) 
+
+energy_hourly$Month <- as.integer(energy_hourly$Month)
+energy_hourly$Kitchen_all <- energy_hourly$Kitchen_all/1000
+energy_hourly$Laundry_all <- energy_hourly$Laundry_all/1000
+energy_hourly$AcHeating_all <- energy_hourly$AcHeating_all/1000
+
+head(energy_hourly)
+
+ggplot(energy_hourly, aes( Month, Kitchen_all)) +
+  geom_bar(stat="identity") +
+  facet_wrap(~year)
+
+ggplot(mpg, aes(displ, hwy)) +
+  geom_point() +
+  facet_wrap(~class)
+
+length(energy$Sub_metering_3)
+
+
+#### checking NAs ####
+
+#### plots ####
+
+# doughnut
+
+ggplot(conv, aes(fill=category, ymax=ymax, ymin=ymin, xmax=4, xmin=3)) +
+  geom_rect(colour="grey30") +
+  coord_polar(theta="y") +
+  xlim(c(0, 4)) +
+  theme_bw() +
+  theme(panel.grid=element_blank()) +
+  theme(axis.text=element_blank()) +
+  theme(axis.ticks=element_blank()) +
+  labs(title="Total Players vs Depositors" , x= "", y="") +
+  guides(fill=guide_legend(title="")) + 
+  geom_label(aes(label=paste(round(fraction*100,2),"%"),x=3.5,y=(ymin+ymax)/2),inherit.aes = TRUE, show.legend = F) + 
+  theme(legend.position=c(.5, .5))
