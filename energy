@@ -1,4 +1,4 @@
-#rm(list = ls())
+rm(list = ls())
 
 #### Libraries ####
 
@@ -9,6 +9,7 @@ library(randomForest)
 library(lubridate)
 library(zoo)
 library(ggthemes)
+library(data.table)
 
 ### Dataset info
 # This archive contains 2075259 measurements gathered between December 2006 and November 2010 (47 months). 
@@ -31,16 +32,32 @@ library(ggthemes)
 
 ####> Loading Dataset
 
-energy <- read.csv("~/Desktop/Ubiqum/Ubiqum mentor/Task 5 Energy/household_power_consumption.txt",sep=";", dec = ".", na.strings ="?", stringsAsFactors=FALSE)
-energy <- cbind(energy,paste(energy$Date,energy$Time), stringsAsFactors=FALSE)
 
+energy <- fread("~/Desktop/Ubiqum/Ubiqum mentor/Task 5 Energy/household_power_consumption.txt",sep=";", dec = ".", na.strings ="?", stringsAsFactors=FALSE)
+energy <- as.data.frame(energy) # necessary due to fread, otherwise some stuff wont work
+
+energy <- cbind(energy,paste(energy$Date,energy$Time), stringsAsFactors=FALSE)
 energy <- energy[,c(ncol(energy), 1:(ncol(energy)-1))]
-colnames(energy)[1] <- 'DateTime'
+
+colnames(energy)[1] <- 'DateTime' # rename datetime column
 
 #### DF with NAs ####
 energy_na <- energy
 energy_na$DateTime <- strptime(energy_na$DateTime, "%d/%m/%Y %H:%M:%S")
-energy_na$Date < as.Date.POSIXct(energy_na$Date, tz = "GMT")
+# count nas in datetime
+nrow(energy_na[is.na(energy_na$DateTime),]) # 240 NAs in Datetime
+
+energy_na$DateTime < as.Date.POSIXct(energy_na$DateTime, tz = "CET")
+
+attr(energy_na$DateTime,"tzone")
+
+attr(as.POSIXct(energy_na$DateTime),"tzone")
+
+[1] "Europe/London"
+
+
+# count nas again
+nrow(energy_na[is.na(energy_na$DateTime),]) # still 240
 
 energy_onlyNA <- energy_na[is.na(energy_na$Global_active_power),] 
 
@@ -68,17 +85,30 @@ labs(title = "NAs in hours per Month", y = "NAs in hours", x = "Month") +
 # alternative: filter out 2006 (no nas), factor month
 # plus bw theme, no grid
 
-ggplot(energy_NAs_permonth %>% dplyr::filter(Year != 2006), aes(factor(Month), NAs)) +
+df = c(12,20,30)
+
+
+energy_na %>% group_by(month(DateTime), year((DateTime))) %>% summarise(count(is.na(energy_na$DateTime)))
+
+
+str(energy_na$DateTime)
+
+month(energy_na$DateTime)
+
+
+count(is.na(energy_na$DateTime))
+ggplot(energy_na, aes(factor(month(DateTime)), count(is.na(energy_na$DateTime)))) +
   geom_bar(stat="identity") + facet_wrap(~Year) +
-  labs(title = "NAs in hours per Month", y = "NAs in hours", x = "Month") +
+#  labs(title = "NAs in hours per Month", y = "NAs in hours", x = "Month") +
 theme(panel.grid.major = element_blank() , panel.grid.minor = element_blank()) +
   
 # theme_bw()
 # theme_dark()
 # theme_economist()
 #  , scales="free"
-#  theme_tufte()
-#  theme_excel()
+  
+  theme_tufte()
+  theme_excel()
 
   
 # replacing NA's by 0 (will figure out a better way later) 
@@ -242,11 +272,13 @@ View(head(energy))
 
 energy_hourly <- energy %>% group_by(lubridate::year(DateTime)) %>% summarise(Kitchen_all = sum(Kitchen), Laundry_all = sum(Laundry), AcHeating_all = sum (sum(Laundry))) 
 
+
 energy$Kitchen
 
 energy_hourly <- energy  %>%
   group_by(year = lubridate::year(DateTime), Day = lubridate::day(DateTime), Hour = lubridate::hour(DateTime), Month = lubridate::month(DateTime)) %>%
   summarise(Kitchen_all = sum(Kitchen), Laundry_all = sum(Laundry), AcHeating_all = sum (sum(Laundry))) 
+
 
 energy_hourly$Month <- as.integer(energy_hourly$Month)
 energy_hourly$Kitchen_all <- energy_hourly$Kitchen_all/1000
@@ -259,9 +291,11 @@ ggplot(energy_hourly, aes( Month, Kitchen_all)) +
   geom_bar(stat="identity") +
   facet_wrap(~year)
 
+
 ggplot(mpg, aes(displ, hwy)) +
   geom_point() +
   facet_wrap(~class)
+
 
 length(energy$Sub_metering_3)
 
