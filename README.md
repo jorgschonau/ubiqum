@@ -1,2 +1,2 @@
-# ubiqum
-This is where I keep all files for the ubiqum data analysis course
+# The Ubiqum Files
+This is where I keep the R scripts for the ubiqum data analysis course
