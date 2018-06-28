@@ -1,59 +1,62 @@
-#rm(list = ls())
+rm(list = ls())
 #### Libraries ####
 library(readr)
-#library(stats)
+library(stats)
 library(caret)
 library(e1071)
-library(dplyr)
 library(C50)
-#library(lubridate)
-#library(anytime)
+library(lubridate)
 library(scatterplot3d)
 library(reshape2)
+library(tidyverse)
 
-set.seed(456)
+setwd("~/Desktop/Ubiqum/Ubiqum mentor/Task 8 Wifi/")
 
 #### Data import, type conversions, basic pruning ####
-trainingData <- read_csv(file="C:\\Users\\Jorg\\Desktop\\Ubiqum\\Task 10 - Wifi location\\UJIndoorLoc\\UJIndoorLoc\\trainingData.csv",
-                       col_types = cols(BUILDINGID = col_character(), 
-                                        FLOOR = col_character(), PHONEID = col_character(), 
-                                        RELATIVEPOSITION = col_character(), 
-                                        USERID = col_character()))
-
-validationData <- read_csv(file="C:\\Users\\Jorg\\Desktop\\Ubiqum\\Task 10 - Wifi location\\UJIndoorLoc\\UJIndoorLoc\\ValidationData.csv",
+trainingData <- read_csv(file="trainingData.csv",
                          col_types = cols(BUILDINGID = col_character(), 
                                           FLOOR = col_character(), PHONEID = col_character(), 
                                           RELATIVEPOSITION = col_character(), 
                                           USERID = col_character()))
 
-# --- data type conversion etc #
+validationData <- read_csv(file="validationData.csv",
+                           col_types = cols(BUILDINGID = col_character(), 
+                                            FLOOR = col_character(), PHONEID = col_character(), 
+                                            RELATIVEPOSITION = col_character(), 
+                                            USERID = col_character()))
+
+# --- data type conversion etc 
 trainingData$FLOOR = as.factor(trainingData$FLOOR)
 trainingData$LATITUDE = as.numeric(trainingData$LATITUDE)
 trainingData$LONGITUDE = as.numeric(trainingData$LONGITUDE)
 trainingData$BUILDINGID = as.factor(trainingData$BUILDINGID)
 trainingData$SPACEID = as.factor(trainingData$SPACEID)
 trainingData$RELATIVEPOSITION = as.factor(trainingData$RELATIVEPOSITION)
-# removing useless variables (we need user id & device id for histograms, can delete later)
-#trainingData$USERID <- NULL
-#trainingData$PHONEID <- NULL
-trainingData$TIMESTAMP <- NULL
+# removing useless variables (we need user id & device id for histograms, 
+# can delete later, will also keep timestamp this time)
+# trainingData$USERID <- NULL
+# trainingData$PHONEID <- NULL
+# trainingData$TIMESTAMP <- NULL
+
+#### PreProcessing, training sample etc ####
+
 # adding uniqe space id - might be useful for later 
 trainingData$UNIQUESPACEID <- as.factor(paste(trainingData$BUILDINGID, trainingData$FLOOR, trainingData$SPACEID, trainingData$RELATIVEPOSITION, sep=""))
 # adding ID no - might be useful for later (joining etc)
 trainingData$ID <- seq.int(nrow(trainingData))
-# --- removing waps with straight 100's 
-trainingData <- trainingData[ - as.numeric(which(apply(trainingData, 2, var) == 0))]
 
+# remove all solid 100's columns (not neccessary any longer, as next step removes all zero var columns)
+trainingDataSmall <- trainingData[, apply(trainingData== 100, 2, all)] # 38 waps
+
+# --- removing waps with zero variance 
+trainingData <- trainingData[-as.numeric(which(apply(trainingData, 2, var) == 0))] # 38 waps, so could have used the step above
 training <- trainingData
-
-#### PreProcessing, training sample etc ####
 
 # Setting Threshold for Signal Strength 
 #threshold = -95 #  The decibel threshold that you want to filter (i.e. remove all values less than -90 (-90 to -100) and replace with 100)
 
-#View(trainingDataSmall) = trainingData[, !apply(trainingData== 100, 2, all)] #<----- Removes all solid 100 Columns
 
-#View(training[,(ncol(training)-8):ncol(training)])
+View(training[,(ncol(training)-8):ncol(training)])
 #View(training)
 
 # replacing 100 by -100 (and every thing less than -100)
@@ -61,10 +64,8 @@ for(i in 1:465){
   training[which(training[,i] == 100 | training[,i] <= -100), i] = -100
 }
 
-
-# removing columns with near zero variance (change < -96 to change) 
-#training <- setdiff(training, training[,which(apply(training[,1:465],2,FUN = max) < -79 )])
-
+# training <- setdiff(training, training[,which(apply(training[,1:465],2,FUN = max) < -79 )])
+# removing columns with max -96 or less ) 
 training <- training[,-which(apply(training[,1:465],2,FUN = max) <= -96 )]
 
 # Remove all columns with only 100's 
@@ -84,7 +85,6 @@ training <- training[,-which(apply(training[,1:465],2,FUN = max) <= -96 )]
 # adding column with max value of each row
 training$max <- apply(training[,1:(ncol(training)-10)], 1, FUN=max)
 
-
 # view rows with max value of over -30 - over 500 rows
 #View(training[which(training$max>=-25),])
 lowmax <- training[which(training$max>=-24),]
@@ -101,8 +101,8 @@ lowmax <- training[which(training$max>=-24),]
 #  geom_histogram(binwidth = 1) 
 
 # ----> exploring high strength signals
-#plot(table(lowmax$BUILDINGID))
-#plot(table(lowmax$PHONEID))
+# plot(table(lowmax$BUILDINGID))
+# plot(table(lowmax$PHONEID))
 
 # highmax <- training[which(training$max<=-100),]
 # 
@@ -110,7 +110,6 @@ lowmax <- training[which(training$max>=-24),]
 # phone1 <- training[which(training$PHONEID == 1),]
 # phone1 <- training[which(training$PHONEID == 1),]
 # phone13 <- training[which(training$PHONEID == 13),]
-
 
 # ----> exploring high strength signals
 # plot(table(highmax$BUILDINGID))
@@ -162,8 +161,7 @@ training_norm <- replace(training_norm, is.na(training_norm), 0)
 training_norm$max <- NULL
 
 
-
-#### Modelling! ####
+#### Modelling ####
 
 #----> Create Training/Testing Partitions ----- 
 set.seed(456)
@@ -202,7 +200,7 @@ fitControl<- trainControl(method="repeatedcv", number=10, repeats=3)
 modelknnbld <- train(BUILDINGID ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-6))],
                      method = "knn", 
                      trControl = fitControl)
-                     #preProcess = c("center","scale")) 
+#preProcess = c("center","scale")) 
 
 modelknnbld
 # - only buildingid
@@ -214,7 +212,7 @@ modelknnbld
 modelsvmbld <- train(BUILDINGID ~ .,data = training[, c(1:(ncol(training)-10), (ncol(training)-6))],
                      method = "svmLinear2", 
                      trControl = fitControl)
-                     #preProcess = c("center","scale")) 
+#preProcess = c("center","scale")) 
 modelsvmbld
 # cost  Accuracy   Kappa   
 #1.00  0.9980449  0.9969464
@@ -223,7 +221,7 @@ modelsvmbld
 modelgmbbld = train(BUILDINGID ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-6))],
                     method = "gbm", 
                     trControl = fitControl)
-                    #preProcess = c("center","scale") )
+#preProcess = c("center","scale") )
 modelgmbbld 
 # interaction.depth  n.trees  Accuracy   Kappa    
 #3                  150      0.9986674  0.9979137
@@ -331,7 +329,7 @@ testingbuild2$FLOOR <- as.factor(testingbuild2$FLOOR)
 modelknnFloorBuild0 <- train(FLOOR ~ ., data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "knn", 
                              trControl = fitControl)
-                             #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelknnFloorBuild0
 # k  Accuracy   Kappa    
 # 5  0.9538079  0.9382192
@@ -351,7 +349,7 @@ postResample(predknnfloorbuild0, testingbuild0$FLOOR)
 modelsvmDFloorBuild0 <- train(FLOOR ~ .,data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                               method = "svmLinear2", 
                               trControl = fitControl)
-                              #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelsvmDFloorBuild0
 # cost  Accuracy   Kappa    
 # 0.25  0.9820019  0.9759226
@@ -367,7 +365,7 @@ postResample(predsvmfloorBuild0, testingbuild0$FLOOR)
 modelGBMFloorBuild0 <- train(FLOOR ~ ., data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              trControl = fitControl,
                              method = "gbm") 
-                             #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelGBMFloorBuild0
 # 3                  100      0.9544756  0.9391338
 
@@ -380,7 +378,7 @@ postResample (predfGMBloorbuild0, testingbuild0$FLOOR)
 modelRFFloorBuild0 <- train(FLOOR ~ ., data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                             method = "rf",
                             trControl = fitControl)
-                            #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelRFFloorBuild0 
 # mtry  Accuracy   Kappa     
 # 201   0.9383427  0.9169700
@@ -394,7 +392,7 @@ postResample(predfRFloorbuild0, testingbuild0$FLOOR)
 modelC50floorBuild0 <- train(FLOOR ~ ., data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "C5.0",
                              trControl = fitControl)
-                             #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelC50floor
 # tree   FALSE   10      0.7752981  0.6988161
 # tree   FALSE   20      0.7938176  0.7235486
@@ -415,7 +413,7 @@ testingbuild0$Floor <- predfGMBloorbuild0
 modelknnFloorBuild1 <- train(FLOOR ~ ., data = trainingbuild1[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "knn", 
                              trControl = fitControl)
-                             #preProcess = c("center","scale")) 
+#preProcess = c("center","scale")) 
 modelknnFloorBuild1
 # k  Accuracy   Kappa    
 # 5  0.9405300  0.9196175
@@ -431,7 +429,7 @@ postResample(predfknnfloorbuild1, testingbuild1$FLOOR)
 modelsvmBLDFloorBuild1 <- train(FLOOR ~ .,data = trainingbuild1[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                                 method = "svmLinear2", 
                                 trControl = fitControl)
-                                #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelsvmBLDFloorBuild1 
 # cost  Accuracy   Kappa    
 # 1.00  0.9707198  0.9603184
@@ -448,7 +446,7 @@ postResample(predsvmfloorbuild1, testingbuild1$FLOOR)
 modelGBMFloorBuild1 <- train(FLOOR ~ ., data = trainingbuild1[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "gbm",
                              trControl = fitControl)
-                             #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelGBMFloorBuild1
 #3                  100      0.9370825  0.9147728
 
@@ -461,7 +459,7 @@ postResample(predGBMFloorBuild1, testingbuild1$FLOOR)
 modelRFFloorBuild1 <- train(FLOOR ~ ., data = trainingbuild1[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                             method = "rf", 
                             trControl = fitControl)
-                            #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelRFFloorBuild1
 # mtry  Accuracy   Kappa    
 # 223   0.9415315  0.92087091
@@ -476,7 +474,7 @@ postResample(predmodelRFFloorBuild1, testingbuild1$FLOOR)
 modelC50floorBuild1 <- train(FLOOR ~ ., data = trainingbuild1[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "C5.0",
                              trControl = fitControl)
-                             #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelC50floorBuild1
 # tree   FALSE   20      0.9319609  0.9079839
 
@@ -495,7 +493,7 @@ testingbuild1$FLOOR <- predC50floorBuild1
 modelknnFloorBuild2 <- train(FLOOR ~ ., data = trainingbuild2[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "knn", 
                              trControl = fitControl)
-                             #preProcess = c("center","scale")) 
+#preProcess = c("center","scale")) 
 modelknnFloorBuild2
 # k  Accuracy   Kappa    
 # 5  0.9656404  0.9556802
@@ -511,7 +509,7 @@ postResample(predknnFloorBuild2, testingbuild2$FLOOR)
 modelsvmBLDFloorbuild2 <- train(FLOOR ~ .,data = trainingbuild2[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                                 method = "svmLinear2", 
                                 trControl = fitControl)
-                                #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelsvmBLDFloorbuild2
 # cost  Accuracy   Kappa    
 # 0.25  0.9850199  0.9807134
@@ -527,7 +525,7 @@ postResample(predsvmFloorbuild2, testingbuild2$FLOOR)
 modelGBMFloorbuild2 <- train(FLOOR ~ ., data = trainingbuild2[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "gbm",
                              trControl = fitControl)
-                             #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelGBMFloorbuild2
 # 3                  100      0.9452185  0.9300994
 # 3                  150      0.9514165  0.9379996
@@ -541,7 +539,7 @@ postResample(predGBMFloorbuild2, testingbuild2$FLOOR)
 modelRFFloorbuild2 <- train(FLOOR ~ ., data = trainingbuild2[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                             method = "rf",
                             trControl = fitControl)
-                            #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelRFFloorbuild2
 # 201   0.9422547  0.92611660
 # 400   0.9201210  0.89772634
@@ -555,7 +553,7 @@ postResample(predRFFloorbuild2, testingbuild2$FLOOR)
 modelC50floorbuild2 <- train(FLOOR ~ ., data = trainingbuild2[, c(1:(ncol(training)-8), (ncol(training)-5), (ncol(training)-4))],
                              method = "C5.0",
                              trControl = fitControl)
-                             #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 modelC50floorbuild2
 # tree   FALSE   10      0.8922023  0.8623645
 # tree   FALSE   20      0.9042603  0.8776709
@@ -631,9 +629,9 @@ modelknnFloorBuildAll
 # ----> SVM floor Build all ----
 # (using predictions for building)
 modelsvmBLDFloorbuildAll <- train(FLOOR ~ .,data = training[, c(1:(ncol(training)-10), (ncol(training)-6), (ncol(training)-7))],
-                                 method = "svmLinear2", 
-                                 trControl = fitControl)
-                                 #preProcess = c("center","scale"))
+                                  method = "svmLinear2", 
+                                  trControl = fitControl)
+#preProcess = c("center","scale"))
 modelsvmBLDFloorbuildAll 
 # cost  Accuracy   Kappa    
 # 1.00  0.9904047  0.9874550
@@ -648,7 +646,7 @@ modelsvmBLDFloorbuildAll
 modelGBMFloorAll <- train(FLOOR ~ .,data = training[, c(1:(ncol(training)-10), (ncol(training)-6), (ncol(training)-7))],
                           method = "gbm",
                           trControl = fitControl)
-                         
+
 #modelGBMFloorAll
 #3                  150      0.9755652  0.9680394
 
@@ -742,24 +740,24 @@ postResample(predknnLAT_onlylat, testing$LATITUDE)
 
 # dont use this model, no realiable predictions for floor
 modelknnLAT_both    <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))],
-                     method = "knn",
-                     trControl = fitControl)
+                             method = "knn",
+                             trControl = fitControl)
 
 
 predknnLAT_nofloor <- predict(modelknnLAT_nofloor, newdata = testing)
 postResample(predknnLAT_nofloor, testing$LATITUDE)
 
 modelknnLAT_latbuild    <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-7))],
-                     method = "knn",
-                     trControl = fitControl)      
+                                 method = "knn",
+                                 trControl = fitControl)      
 
 modelknnLAT_onlylat <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-8))],
-                     method = "knn",
-                     trControl = fitControl)
+                             method = "knn",
+                             trControl = fitControl)
 
 modelknnLAT_latfloor    <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-6))],
-                                  method = "knn",
-                                  trControl = fitControl) 
+                                 method = "knn",
+                                 trControl = fitControl) 
 
 resultslatknn <- resamples(list(KNN_bldfloor=modelknnLAT_both, KNN_bld=modelknnLAT_latbuild, KNN_onlylat=modelknnLAT_onlylat, KNN_floor=modelknnLAT_latfloor))
 dotplot(resultslatknn, metric = resultslatknn$metrics[1:2])
@@ -783,7 +781,6 @@ RMSE Rsquared      MAE
 6.468457 0.990678 3.379463 
 
 #colnames(training[, 406:ncol(training)])
-                                    
 
 modelknnLAT # 5000 sample
 # k  RMSE      Rsquared   MAE     
@@ -871,7 +868,7 @@ postResample(predknnLAT_nofloor, testing$LATITUDE)
 modelsvmLAT <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))],
                      method = "svmLinear2",
                      trControl = fitControl)
-                    
+
 
 modelGBMlat <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))],
                      method = "gbm",
@@ -881,7 +878,6 @@ resultslat <- resamples(list(KNN_Lat=modelknnLAT_both, SVM_Lat=modelsvmLAT, GBM_
 
 dotplot(resultslat, metric = resultslatknn$metrics[1:2], main = "Model Comparison Lat")
 
-                     
 modelsvmLAT
 # cost  RMSE      Rsquared   MAE     
 # 0.25  25.40792  0.9015122  17.87983
@@ -895,9 +891,9 @@ postResample(predsvmLAT, testing$LATITUDE)
 
 #-----> GBM for LAT ----
 modelGBMlat <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))],
-                    method = "gbm",
-                    trControl = fitControl)
-                    #preProcess = c("center","scale") )
+                     method = "gbm",
+                     trControl = fitControl)
+#preProcess = c("center","scale") )
 
 
 modelGBMlat_noFloor = train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-9), (ncol(training)-4))],
@@ -923,7 +919,7 @@ postResample(predgbmLAT_noFloor, testing$LATITUDE)
 modelRFlat <- train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-5), (ncol(training)-4))],
                     method = "rf",
                     trControl = fitControl),
-                    ntree = 1)
+ntree = 1)
 modelRFlat 
 # 225   15.07612  0.9508877   8.925524
 
@@ -936,7 +932,7 @@ postResample(predrfLAT, testing$LATITUDE)
 modelxgblinlat = train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-5), (ncol(training)-4))],
                        method = "xgbLinear", 
                        trControl = fitControl)
-                       #preProcess = c("center","scale") )
+#preProcess = c("center","scale") )
 modelxgblinlat
 # 0e+00   1e-04  100       9.816994  0.9791242  6.847718
 # 0e+00   1e-04  150       9.805861  0.9791832  6.828599
@@ -949,7 +945,7 @@ postResample(xgblinlatLAT, testing$LATITUDE)
 modelxgbdartlat = train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-5), (ncol(training)-4))],
                         method = "xgbDART",
                         trControl = fitControl)
-                        #preProcess = c("center","scale") )
+#preProcess = c("center","scale") )
 predxgbdartLAT <- predict(modelxgbdartlat, newdata = testing)
 postResample(predxgbdartLAT, testing$LATITUDE)
 # RMSE    Rsquared         MAE 
@@ -959,7 +955,7 @@ postResample(predxgbdartLAT, testing$LATITUDE)
 modelxgbtreelat = train(LATITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-5), (ncol(training)-4))],
                         method = "xgbTree",
                         trControl = fitControl)
-                        #preProcess = c("center","scale") )
+#preProcess = c("center","scale") )
 predxgbtreelat <- predict(modelxgbtreelat, newdata = testing)
 postResample(predxgbtreelat, testing$LATITUDE)
 # RMSE   Rsquared        MAE 
@@ -968,7 +964,7 @@ postResample(predxgbtreelat, testing$LATITUDE)
 modelrpartlat<- train(LATITUDE ~., data = training[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-5), (ncol(training)-4))],
                       method = "rpart",
                       trControl = fitControl),
-                      tuneLength = 10)
+tuneLength = 10)
 
 modelrpartlat
 # 0.006963939  20.54208  0.9058014  15.10281
@@ -1024,27 +1020,27 @@ colnames(trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(trai
 
 # ----- > Build 0 -----
 modelknnlatBuild0 <- train(LATITUDE ~ ., data = trainingbuild0[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-6))],
-                             method = "knn", 
-                             trControl = fitControl)
+                           method = "knn", 
+                           trControl = fitControl)
 modelknnlatBuild0
 # k  RMSE      Rsquared   MAE     
 # 5  3.999528  0.9846401  2.736261
 
 modelxgbLinearlatBuild0 <- train(LATITUDE ~ ., data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-4))],
-                             method = "xgbLinear", 
-                             trControl = fitControl)
+                                 method = "xgbLinear", 
+                                 trControl = fitControl)
 modelxgbLinearlatBuild0
 #1e-04   0e+00  150      5.320710  0.9723291  3.678959
 
 modelgbmlatBuild0 <- train(LATITUDE ~ ., data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-4))],
-                             method = "gbm", 
-                             trControl = fitControl)
+                           method = "gbm", 
+                           trControl = fitControl)
 modelgbmlatBuild0
 #3                  150       6.574656  0.9577562  4.926615
 
 modelrflatBuild0 <- train(LATITUDE ~ ., data = trainingbuild0[, c(1:(ncol(training)-8), (ncol(training)-6), (ncol(training)-4))],
-                             method = "rf", 
-                             trControl = fitControl)
+                          method = "rf", 
+                          trControl = fitControl)
 modelrflatBuild0
 
 # ----- > Build 1 -----
@@ -1136,28 +1132,28 @@ postResample(predknnLong_onlylong, testing$LONGITUDE)
 
 
 modelknnLONG    <-    train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))],
-                      method = "knn",
-                      trControl = fitControl)
-
-modelknnLONG_nofloor <-train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-8), (ncol(training)-6))],
-                      method = "knn",
-                      trControl = fitControl)
- 
-modelknnLONG_noLat <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-7), (ncol(training)-6))],
-                      method = "knn",
-                      trControl = fitControl)
-
-modelknnLONG_onlylong <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9))],
                             method = "knn",
                             trControl = fitControl)
 
-modelknnLONG_floorlong <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-7))],
+modelknnLONG_nofloor <-train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-8), (ncol(training)-6))],
+                             method = "knn",
+                             trControl = fitControl)
+
+modelknnLONG_noLat <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-7), (ncol(training)-6))],
+                            method = "knn",
+                            trControl = fitControl)
+
+modelknnLONG_onlylong <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9))],
                                method = "knn",
                                trControl = fitControl)
 
-modelknnLONG_nolatbuild <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-6))],
+modelknnLONG_floorlong <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-7))],
                                 method = "knn",
                                 trControl = fitControl)
+
+modelknnLONG_nolatbuild <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-6))],
+                                 method = "knn",
+                                 trControl = fitControl)
 
 colnames(training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-7))])
 
@@ -1176,16 +1172,16 @@ bwplot(resultslong, metric = resultslong$metrics[1:2])
 
 
 modelsvmLONG       <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))],
-                      method = "svmLinear2",
-                      trControl = fitControl)
+                            method = "svmLinear2",
+                            trControl = fitControl)
 
 modelGBMLONG       <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-10), (ncol(training)-9), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))],
-                      method = "gbm",
-                      trControl = fitControl)
+                            method = "gbm",
+                            trControl = fitControl)
 
 modelGBMLONG       <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-7), (ncol(training)-5), (ncol(training)-4))],
-                      method = "gbm",
-                      trControl = fitControl)
+                            method = "gbm",
+                            trControl = fitControl)
 
 colnames(training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)-7), (ncol(training)-6))])
 
@@ -1193,7 +1189,7 @@ colnames(training[, c(1:(ncol(training)-10), (ncol(training)-8), (ncol(training)
 
 
 
-                      #preProcess = c("center","scale")) 
+#preProcess = c("center","scale")) 
 #modelknnLONG
 # k  RMSE      Rsquared   MAE     
 # 5  11.68885  0.9694487  7.314443
@@ -1209,7 +1205,7 @@ predknnLONG <- predict(modelknnLONG, newdata = testing)
 modelsvmLONG <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-7), (ncol(training)-5), (ncol(training)-4))],
                       method = "svmLinear2",
                       trControl = fitControl)
-                      #preProcess = c("center","scale")) 
+#preProcess = c("center","scale")) 
 #modelsvmLONG
 # cost  RMSE      Rsquared   MAE     
 # 0.25  31.79296  0.9345022  22.13165
@@ -1225,7 +1221,7 @@ postResample(predsvmLONG, testing$LONGITUDE)
 modelGBMLONG = train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-7), (ncol(training)-5), (ncol(training)-4))],
                      method = "gbm",
                      trControl = fitControl)
-                     #preProcess = c("center","scale") )
+#preProcess = c("center","scale") )
 
 modelGBMLONG 
 # 3                  150      15.95772  0.9834484  12.19954predgbmLONG <- predict(modelGBMLONG, newdata = testing)
@@ -1240,7 +1236,7 @@ postResample(predGBMLONG, testing$LONGITUDE)
 modelRFLONG <- train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-7), (ncol(training)-5), (ncol(training)-4))],
                      method = "rf",
                      trControl = fitControl),
-                     ntree = 1)
+ntree = 1)
 #modelRFLONG 
 #203   16.17105  0.9413705   9.850733
 
@@ -1253,7 +1249,7 @@ postResample(predrfLONG, testing$LONGITUDE)
 modelxgblinLONG = train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-7), (ncol(training)-5), (ncol(training)-4))],
                         method = "xgbLinear",
                         trControl = fitControl)
-                        #preProcess = c("center","scale") )
+#preProcess = c("center","scale") )
 #modelxgblinLONG
 #0e+00   0e+00  150      10.90892  0.9731534  7.759733
 
@@ -1265,7 +1261,7 @@ postResample(predxgblinLONG, testing$LONGITUDE)
 modelxgbdartLONG = train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-7), (ncol(training)-5), (ncol(training)-4))],
                          method = "xgbDART", 
                          trControl = fitControl)
-                         #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 
 predxgbdartLONG <- predict(modelxgbdartLONG, newdata = testing)
 postResample(predxgbdartLONG, testing$LONGITUDE)
@@ -1276,7 +1272,7 @@ postResample(predxgbdartLONG, testing$LONGITUDE)
 modelxgbtreeLONG = train(LONGITUDE ~ ., data = training[, c(1:(ncol(training)-8), (ncol(training)-7), (ncol(training)-5), (ncol(training)-4))],
                          method = "xgbTree",
                          trControl = fitControl)
-                         #preProcess = c("center","scale"))
+#preProcess = c("center","scale"))
 
 predxgbtreeLONG <- predict(modelxgbtreeLONG, newdata = testing)
 #postResample(predxgbtreeLONG, testing$LONGITUDE)
@@ -1311,7 +1307,7 @@ View(testingerror)
 testingerror[,5:10] <- NULL
 
 # calculating error
-  
+
 testingerror$errorLat <- abs(testingerror$LATITUDE - testingerror$predLAT)  
 testingerror$errorLong <- abs(testingerror$LONGITUDE - testingerror$predLONG)  
 testingerror$deviation <- sqrt(testingerror$errorLat^2+testingerror$errorLong^2)
@@ -1325,9 +1321,7 @@ testingerror_melt <- subset(training_norm_melt, value !=0)
 ggplot(testingerror_melt, aes(value)) + 
   geom_histogram(binwidth = 1)
 
-
 View(testingerror)
-
 
 #----> Scatter Plot for comparing pred vs actual coordinates ----
 
@@ -1400,8 +1394,6 @@ ggplot() +
   labs(title = "Actual (black) vs Predicted Data (blue)")
 
 
-
-
 library(plotly)
 plotlyTrainingData <- plot_ly(trainingData, x = trainingData$LATITUDE, y = trainingData$LONGITUDE, z = trainingData$FLOOR, color = trainingData$FLOOR, colors = c('#BF382A','green' ,'#0C4B8E')) %>%
   add_markers() %>%
@@ -1410,7 +1402,6 @@ plotlyTrainingData <- plot_ly(trainingData, x = trainingData$LATITUDE, y = train
                       zaxis = list(title = 'Floor')))
 
 plotlyTrainingData
-
 
 View(training_norm)
 x2 <- na.omit(x2)
@@ -1427,9 +1418,9 @@ View(training_norm)
 ggplot() + 
   geom_point(data = trainingData[,521:522] , aes(x = LONGITUDE, y = LATITUDE), color = "black", size = 1) +
   labs(title = "Scatter Plot of all ")
-  
-  
-  xlab('Latitude') +
+
+
+xlab('Latitude') +
   ylab('Longitude')
 
 
