@@ -3,13 +3,10 @@ rm(list = ls())
 library(readr)
 library(caret)
 library(e1071)
-library(C50)
 library(reshape2)
 library(tidyverse)
 library(tictoc)
-library(doSNOW)
 library(plotly)
-library(C5.0)
 
 setwd("~/Desktop/Ubiqum/Ubiqum mentor/Task 8 Wifi/")
 
@@ -70,12 +67,12 @@ trainingData$ID <- seq.int(nrow(trainingData))
 
 #### removing waps with zero variance 
 
-max(trainingData[1:(ncol(trainingData)-13)])
-min(trainingData[1:(ncol(trainingData)-13)])
+# max(trainingData[1:(ncol(trainingData)-13)])
+# min(trainingData[1:(ncol(trainingData)-13)])
 
 # filtering out low signals, replacing  <=-95 by -100
 for(i in 1:(ncol(trainingData)-12)){
-  trainingData[which(trainingData[,i] <= -92), i] = -100
+  trainingData[which(trainingData[,i] < -92), i] = -100
 }
 
 # replacing 100 by -100 for normilisation
@@ -86,17 +83,20 @@ for(i in 1:(ncol(trainingData)-12)){
 trainingData <- trainingData[-which(apply(trainingData[,1:(ncol(trainingData)-12)], 2,
                                       var) == 0)] # 38 waps, so could have used the step above
 
+#ncol(trainingData) 475 cols
 #which(vapply(trainingData[, 1:(ncol(trainingData) - 12)], function(x) length(unique(x)) <= 5 & max(x) <= -80, logical(1L)) =="TRUE")
 
-trainingData_small <- trainingData[which(vapply(trainingData[, 1:(ncol(trainingData) - 12)],
-                                                 function(x) var(x) <= 4 & max(x) <= -78, logical(1L)) =="TRUE")]
+trainingData_small <- trainingData[-which(vapply(trainingData[, 1:(ncol(trainingData) - 12)],
+                                                 function(x) var(x) <= 4 & max(x) <= -74, 
+                                                 logical(1L)) =="TRUE")]
 
+# ncol(trainingData_small) 333 cols
 
 #trainingData_small <- trainingData[-which(vapply(trainingData[, 1:(ncol(trainingData) - 12)],
 #                                                 function(x) var(x) <= 2 & max(x) <= -75, logical(1L)) =="TRUE")]
 
-
 ncol(trainingData)
+ncol(trainingData_small)
 # from now working with two df's: trainingData & trainingData_small, still need to split them in 
 # training and val again
 
@@ -149,6 +149,15 @@ trainingData_small[,1:(ncol(trainingData_small)-13)] <- apply(trainingData_small
 # trainingData[,1:(ncol(trainingData)-13)] <- apply(trainingData[,1:(ncol(trainingData)-13)], 2,
 #                                                   function(x) 100 + x)
 
+# updating max values per row
+trainingData$max <- apply(trainingData[,1:(ncol(trainingData)-12)], 1, FUN=max)
+trainingData_small$max <- apply(trainingData_small[,1:(ncol(trainingData_small)-12)], 1, FUN=max)
+
+# removing row with max = 0 (helps to avoid nans in normalisation by row)
+trainingData_small <- trainingData_small[-which(trainingData_small$max  == 0),]
+trainingData <- trainingData[-which(trainingData$max == 0),]
+
+
 # ----> Normalisation (for real) ----
 # check that everything is right
 max(trainingData[,1:(ncol(trainingData)-13)])
@@ -165,17 +174,20 @@ normalizebyrow <- function(x) {
   return ( (x-min(x))/(max(x)-min(x)) )
 } # max(training_less_norm)
 
+#remove max 
 
 trainingData[,1:(ncol(trainingData)-13)] <- round(apply(trainingData[,1:(ncol(trainingData)-13)], 2,
-                                                  normalize), 2)
-trainingData_small[,1:(ncol(trainingData_small)-13)] <- round(apply(trainingData_small[,1:(ncol(trainingData_small)-13)], 2,
-                                                        normalize), 2)
+                                                 normalize), 6)
+#trainingData_small[,1:(ncol(trainingData_small)-13)] <- round(apply(trainingData_small[,1:(ncol(trainingData_small)-13)], 2,
+#                                                        normalize), 6)
 
 # option B: normalize by row
-#training_norm <- as.data.frame(t(apply(training_less_norm,1,normalizebyrow)))
-# check
+#training_norm <- as.data.frame(t(apply(trainingData_small,1,normalizebyrow)))
 
-# normalisation step2: +1, log & division by log(2(max value)) to set scale 0 -1
+trainingData_small[,1:(ncol(trainingData_small)-13)] <- round(t(apply(trainingData_small[,1:(ncol(trainingData_small)-13)],
+                                                        1, normalizebyrow)), 6)
+
+# normalisation step2: +1, log & division by log(2(max value)) to set scale 0 - 1
 # training_norm <- training_norm + 1
 # training_norm <- log(training_norm)
 # training_norm <- training_norm/log(2)
@@ -191,13 +203,13 @@ validation_small <- trainingData_small %>% dplyr::filter(Partition =="val")
 
 #---- Create Training/Testing Partitions ----- 
 set.seed(123)
-sampleIndex <- sample(1:nrow(training_big), 4000) #<---- anything higher much higher than 2000 will slow down training off the models considerably 
-sampleIndex2 <- sample(1:nrow(training_small), 4000)
+sampleIndex <- sample(1:nrow(training_big), 3000) #<---- anything higher much higher than 2000 will slow down training off the models considerably 
+sampleIndex2 <- sample(1:nrow(training_small), 3000)
 
 # create Sample Dataframes for trainining_big
 training_big_sample <- training_big[sampleIndex,]
 
-inTraining <- createDataPartition(training_big_sample$BUILDINGID, p = .75, list = FALSE)
+inTraining <- createDataPartition(training_big_sample$BUILDINGID, p = .80, list = FALSE)
 training_big_training <- na.omit(training_big_sample[inTraining,])
 testing_big_training <- training_big_sample[-inTraining,]
 
@@ -213,10 +225,10 @@ fitControl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
 
 # ---- > SVM Building ----
 
-model_svm_bld_big <- train(BUILDINGID ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
-                                                                            (ncol(training_big_training)-9))],
-                     method = "svmLinear2", 
-                     trControl = fitControl)
+# model_svm_bld_big <- train(BUILDINGID ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
+#                                                                             (ncol(training_big_training)-9))],
+#                      method = "svmLinear2", 
+#                      trControl = fitControl)
 
 model_svm_bld_small <- train(BUILDINGID ~ .,
                              data = training_small_training[, c(1:(ncol(training_small_training)-13), 
@@ -224,8 +236,8 @@ model_svm_bld_small <- train(BUILDINGID ~ .,
                            method = "svmLinear2", 
                            trControl = fitControl)
 
-svm_pred_build_big <- predict(model_svm_bld_big, testing_big_training)
-postResample(svm_pred_build_big, testing_big_training$BUILDINGID)
+# svm_pred_build_big <- predict(model_svm_bld_big, testing_big_training)
+# postResample(svm_pred_build_big, testing_big_training$BUILDINGID)
 
 svm_pred_build_small <- predict(model_svm_bld_small, testing_small_training)
 postResample(svm_pred_build_small, testing_small_training$BUILDINGID)
@@ -233,11 +245,11 @@ postResample(svm_pred_build_small, testing_small_training$BUILDINGID)
 
 # ---- > knn Building ----
 
-model_knn_bld_big <- train(BUILDINGID ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
-                                                                            (ncol(training_big_training)-9))],
-                           method = "knn", 
-                           preProcess = c("center","scale"),
-                           trControl = fitControl)
+# model_knn_bld_big <- train(BUILDINGID ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
+#                                                                             (ncol(training_big_training)-9))],
+#                            method = "knn", 
+#                            preProcess = c("center","scale"),
+#                            trControl = fitControl)
 
 model_knn_bld_small <- train(BUILDINGID ~ ., data = training_small_training[, c(1:(ncol(training_small_training)-13), 
                                                                                 (ncol(training_small_training)-9))],
@@ -245,8 +257,8 @@ model_knn_bld_small <- train(BUILDINGID ~ ., data = training_small_training[, c(
                              preProcess = c("center","scale"),
                              trControl = fitControl)
 
-knn_pred_build_big <- predict(model_knn_bld_big, testing_big_training)
-postResample(knn_pred_build_big, testing_big_training$BUILDINGID)
+# knn_pred_build_big <- predict(model_knn_bld_big, testing_big_training)
+# postResample(knn_pred_build_big, testing_big_training$BUILDINGID)
 
 knn_pred_build_small <- predict(model_knn_bld_small, testing_small_training)
 postResample(knn_pred_build_small, testing_small_training$BUILDINGID)
@@ -256,10 +268,10 @@ postResample(knn_pred_build_small, testing_small_training$BUILDINGID)
 
 # ---- > SVM floor ----
 
-model_svm_floor_big <- train(FLOOR ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
-                                                                            (ncol(training_big_training)-10))],
-                           method = "svmLinear2", 
-                           trControl = fitControl)
+# model_svm_floor_big <- train(FLOOR ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
+#                                                                             (ncol(training_big_training)-10))],
+#                            method = "svmLinear2", 
+#                            trControl = fitControl)
 
 model_svm_floor_small <- train(FLOOR ~ .,
                              data = training_small_training[, c(1:(ncol(training_small_training)-13), 
@@ -267,19 +279,19 @@ model_svm_floor_small <- train(FLOOR ~ .,
                              method = "svmLinear2", 
                              trControl = fitControl)
 
-svm_pred_floor_big <- predict(model_svm_floor_big, testing_big_training)
-postResample(svm_pred_floor_big, testing_big_training$FLOOR)
+# svm_pred_floor_big <- predict(model_svm_floor_big, testing_big_training)
+# postResample(svm_pred_floor_big, testing_big_training$FLOOR)
 
 svm_pred_floor_small <- predict(model_svm_floor_small, testing_small_training)
 postResample(svm_pred_floor_small, testing_small_training$FLOOR)
 
 # ---- > knn floor----
-
-model_knn_floor_big <- train(FLOOR ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
-                                                                            (ncol(training_big_training)-10))],
-                           method = "knn", 
-                           preProcess = c("center","scale"),
-                           trControl = fitControl)
+# 
+# model_knn_floor_big <- train(FLOOR ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
+#                                                                             (ncol(training_big_training)-10))],
+#                            method = "knn", 
+#                            preProcess = c("center","scale"),
+#                            trControl = fitControl)
 
 model_knn_floor_small <- train(FLOOR ~ ., data = training_small_training[, c(1:(ncol(training_small_training)-13), 
                                                                                 (ncol(training_small_training)-10))],
@@ -287,8 +299,8 @@ model_knn_floor_small <- train(FLOOR ~ ., data = training_small_training[, c(1:(
                              preProcess = c("center","scale"),
                              trControl = fitControl)
 
-knn_pred_floor_big <- predict(model_knn_floor_big, testing_big_training)
-postResample(knn_pred_floor_big, testing_big_training$FLOOR)
+# knn_pred_floor_big <- predict(model_knn_floor_big, testing_big_training)
+# postResample(knn_pred_floor_big, testing_big_training$FLOOR)
 
 knn_pred_floor_small <- predict(model_knn_floor_small, testing_small_training)
 postResample(knn_pred_floor_small, testing_small_training$FLOOR)
@@ -316,11 +328,11 @@ postResample(knn_pred_floor_small, testing_small_training$FLOOR)
 
 # ---- > knn latitude----
 
-model_knn_latitude_big <- train(LATITUDE ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
-                                                                         (ncol(training_big_training)-11))],
-                             method = "knn", 
-                             preProcess = c("center","scale"),
-                             trControl = fitControl)
+# model_knn_latitude_big <- train(LATITUDE ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
+#                                                                          (ncol(training_big_training)-11))],
+#                              method = "knn", 
+#                              preProcess = c("center","scale"),
+#                              trControl = fitControl)
 
 model_knn_latitude_small <- train(LATITUDE ~ ., data = training_small_training[, c(1:(ncol(training_small_training)-13), 
                                                                              (ncol(training_small_training)-11))],
@@ -328,8 +340,8 @@ model_knn_latitude_small <- train(LATITUDE ~ ., data = training_small_training[,
                                preProcess = c("center","scale"),
                                trControl = fitControl)
 
-knn_pred_latitude_big <- predict(model_knn_latitude_big, testing_big_training)
-postResample(knn_pred_latitude_big, testing_big_training$LATITUDE)
+# knn_pred_latitude_big <- predict(model_knn_latitude_big, testing_big_training)
+# postResample(knn_pred_latitude_big, testing_big_training$LATITUDE)
 
 knn_pred_latitude_small <- predict(model_knn_latitude_small, testing_small_training)
 postResample(knn_pred_latitude_small, testing_small_training$LATITUDE)
@@ -356,11 +368,11 @@ postResample(knn_pred_latitude_small, testing_small_training$LATITUDE)
 
 # ---- > knn longitude ----
 
-model_knn_longitude_big <- train(LONGITUDE ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
-                                                                               (ncol(training_big_training)-12))],
-                                method = "knn", 
-                                preProcess = c("center","scale"),
-                                trControl = fitControl)
+# model_knn_longitude_big <- train(LONGITUDE ~ ., data = training_big_training[, c(1:(ncol(training_big_training)-13), 
+#                                                                                (ncol(training_big_training)-12))],
+#                                 method = "knn", 
+#                                 preProcess = c("center","scale"),
+#                                 trControl = fitControl)
 
 model_knn_longitude_small <- train(LONGITUDE ~ ., data = training_small_training[, c(1:(ncol(training_small_training)-13), 
                                                                                    (ncol(training_small_training)-12))],
@@ -368,11 +380,17 @@ model_knn_longitude_small <- train(LONGITUDE ~ ., data = training_small_training
                                   preProcess = c("center","scale"),
                                   trControl = fitControl)
 
-knn_pred_longitude_big <- predict(model_knn_longitude_big, testing_big_training)
-postResample(knn_pred_longitude_big, testing_big_training$LONGITUDE)
+# knn_pred_longitude_big <- predict(model_knn_longitude_big, testing_big_training)
+# postResample(knn_pred_longitude_big, testing_big_training$LONGITUDE)
 
 knn_pred_longitude_small <- predict(model_knn_longitude_small, testing_small_training)
 postResample(knn_pred_longitude_small, testing_small_training$LONGITUDE)
+
+length(knn_pred_longitude_small)
+nrow(testing_small_training)
+length(testing_small_training$LONGITUDE)
+
+View(testing_small_training)
 
 #### Best Models ####
 
@@ -389,7 +407,7 @@ validation_small$predBUILD <- pred_build_val
 
 pred_floor_val <- predict(model_svm_floor_small, validation_small)
 postResample(pred_floor_val,validation_small$FLOOR)
-validation_small$predBUILD <- pred_build_val
+validation_small$predFLOOR <- pred_floor_val
 
 pred_long_val <- predict(model_knn_longitude_small, validation_small)
 postResample(pred_long_val,validation_small$LONGITUDE)
@@ -400,25 +418,70 @@ postResample (pred_lat_val,validation_small$LATITUDE)
 validation_small$predlat <- pred_lat_val
 
 # error distance
-validation_small$error_distance3 <- sqrt ( (validation_small$LATITUDE - validation_small$predlat)^2 + (validation_small$LONGITUDE - validation_small$predLONG)^2 )
+validation_small$error_distance <- sqrt ( (validation_small$LATITUDE - validation_small$predlat)^2 + (validation_small$LONGITUDE - validation_small$predLONG)^2 )
+summary(validation_small$error_distance)
+boxplot(validation_small$error_distance)
 
-summary(validation_small$error_distance2)
-
-boxplot(validation_small$error_distance2)
-
-View(validation_small[which(validation_small$error_distance>100),])
-
-# errors small
-#Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
-#0.000   4.091   7.335  13.914  12.513 232.265 
+View(validation_small[which(validation_small$error_distance>150),])
 
 
-hist(validation_small$error_distance2)
+validation_small$predBUILDFLOOR <- as.factor(paste(validation_small$predBUILD,
+                                           validation_small$predFLOOR,
+                                           sep="-"))
 
-errors_melt <- melt(validation_small$error_distance2)
-training_melt <- subset(training_melt, value != -100 )
+
+View(validation_small[which(validation_small$BUILDFLOOR != validation_small$predBUILDFLOOR),])
+
+
+plot(training_big[ncol(:ncol(training_big)])
+                  
+View(head(training_big,5))
+
+# RMSE  Rsquared       MAE 
+# 22.481079  0.965351  9.201476 
+# > postResample (pred_lat_val,validation_small$LATITUDE)
+# RMSE   Rsquared        MAE 
+# 15.3232101  0.9524683  7.6199822 
+
+# error norm by row
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.000   3.929   7.162  10.976  11.893 349.378 
+
+# summary(validation_small$error_distance)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.000   4.045   7.192  12.584  13.153 273.412 
+
+# # filter >=-98
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.200   4.306   7.642  11.823  12.879 344.440 
+
+# # filter >-90
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.000   4.050   7.354  11.796  12.828 276.832 
+
+# 
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.000   3.720   6.896  10.336  11.303 357.028 
+
+# function(x) var(x) <= 4 & max(x) <= -74, 
+# Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+# 0.2458   4.3431   7.7367  11.9778  12.7076 347.5786 
+
+#filter >-85
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.000   4.050   7.694  12.483  13.344 279.543 
+
+View(validation_small[which(validation_small$max > 40),])
+
+
+hist(validation_small$error_distance)
+
+errors_melt <- melt(validation_small$error_distance)
+
 #
 ggplot(errors_melt, aes(value)) + geom_histogram(binwidth = 5)
+
+View(validation_small[which(validation_small$error_distance > 100),])
 
 # plotlyTrainingData <- plot_ly(trainingData,
 #                               x = trainingData$LATITUDE, 
