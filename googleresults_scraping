@@ -1,10 +1,7 @@
-rm(list = ls())
 #### Libraries ####
 library(readr)
 library(caret)
-#library(e1071)
 library(dplyr)
-#library(C50)
 library(reshape2)
 library(corrplot)
 library(arules)
@@ -13,8 +10,6 @@ library(XML)
 library(bitops)
 library(RCurl)
 library(stringr)
-
-set.seed(123)
 
 # functions
 # combinator function
@@ -76,9 +71,7 @@ saveXML(googleraw_xml, file = "googleraw.txt")
 links <- googleraw %>% html_nodes(xpath='//h3/a') %>% html_attr('href')
 links_clean <- gsub('/url\\?q=','',sapply(strsplit(links[as.vector(grep('url',links))],split='&'),'[',1))
 
-# 
 
-  
 #### queries partial lists
 # Phones
 phones <- c("HUAWEI MATE 10",
@@ -200,36 +193,38 @@ exclude <- sort(unique(exclude))
 phones_modifiers <- combinator(phones,modifiers)
 smartphone_best <- combinator(smartphone,best)
 phones_comparison <- combinator(phones,comparison)
-phones_comparison <- combinator(phones_comparison, phones)
+phones_comparison <- combinator(phones_comparison,phones)
 
 queries1 <- unique(combine(phones,phones_modifiers,smartphone,smartphone_best))
 queries2 <- unique(phones_comparison)
 
+# check length
 length(queries1)
 length(queries2)
 
+# output of autosearch into list
 links_queries1 <- autosearch(queries1)
-links_queries1 <- unique(links_queries1)
-
 links_queries2 <- autosearch(queries2)
 
+# making results unique
+links_queries1 <- unique(links_queries1)
 links_queries2 <- unique(links_queries2)
 
+# combining both lists
 links_all <- combine(links_queries1,links_queries2)
-
 links_all <- unique(links_all)
 
-
+# excluding unwanted links
 links_all <- excluder(links_all,exclude)
 length(links_all)
 
 links_clean <- excluder(links_clean, exclude)
 
+# writing output file 
 write.csv(sort(links_clean),"links_clean.csv", col.names = F)
 
-# last manipulation, for making sure to include Amazon product pages showing ALLl reviews
-
-links_amazon <- gsub("/dp/","/product-reviews/",links_all[grep("www.amazon.", links_all)])
+# last manipulation, for making sure to include Amazon product pages showing ALL reviews
+Links_amazon <- gsub("/dp/","/product-reviews/",links_all[grep("www.amazon.", links_all)])
 links_clean <- combine(links_all,links_amazon)
 
 links_clean <- unique(links_clean)
